@@ -1,3 +1,8 @@
+## Live Demo
+
+Try the app here: [MissionOps Intake Assistant](https://kevintavan-missionops-intake-assistant-app-arko4o.streamlit.app)
+
+
 [README.md](https://github.com/user-attachments/files/29172093/README.md)
 # MissionOps Intake Assistant
 
