@@ -1,0 +1,248 @@
+import os
+import pandas as pd
+import streamlit as st
+
+from src.triage_engine import analyze_note, format_markdown_brief
+from src.evaluation import evaluate_output_against_source
+from src.claude_client import claude_available, analyze_with_claude
+
+
+st.set_page_config(
+    page_title="MissionOps Intake Assistant",
+    page_icon="🧭",
+    layout="wide"
+)
+
+st.title("MissionOps Intake Assistant")
+st.caption("A human-in-the-loop workflow for turning messy intake notes into structured, reviewable briefs.")
+
+with st.sidebar:
+    st.header("Settings")
+    use_claude = st.toggle(
+        "Use Claude API if available",
+        value=False,
+        help="Requires ANTHROPIC_API_KEY. The app still works without it using the local rule-based engine."
+    )
+    st.info("This tool supports staff review. It does not make final decisions.")
+
+tab1, tab2, tab3 = st.tabs(["Generate Intake Brief", "Evaluate Draft Output", "About"])
+
+with tab1:
+    st.subheader("1. Load notes")
+
+    source_choice = st.radio(
+        "Choose data source",
+        ["Use sample data", "Upload CSV"],
+        horizontal=True
+    )
+
+    if source_choice == "Upload CSV":
+        uploaded = st.file_uploader("Upload a CSV with client_id and note columns", type=["csv"])
+        if uploaded:
+            df = pd.read_csv(uploaded)
+        else:
+            df = pd.read_csv("sample_data/intake_notes.csv")
+            st.warning("No file uploaded yet. Showing sample data.")
+    else:
+        df = pd.read_csv("sample_data/intake_notes.csv")
+
+    required_cols = {"client_id", "note"}
+    if not required_cols.issubset(set(df.columns)):
+        st.error("CSV must include at least client_id and note columns.")
+        st.stop()
+
+    st.dataframe(df, use_container_width=True)
+
+    st.subheader("2. Select a note")
+    selected_id = st.selectbox("Client ID", df["client_id"].astype(str).tolist())
+    row = df[df["client_id"].astype(str) == selected_id].iloc[0]
+    note = str(row["note"])
+
+    st.text_area("Source note", note, height=180)
+
+    st.subheader("3. Generate structured brief")
+
+    if st.button("Generate brief", type="primary"):
+        if use_claude and claude_available():
+            try:
+                result = analyze_with_claude(note)
+                st.success("Generated with Claude API.")
+                st.markdown(result)
+            except Exception as exc:
+                st.warning(f"Claude API mode failed, so the app used the local fallback. Error: {exc}")
+                analysis = analyze_note(note)
+                st.markdown(format_markdown_brief(analysis))
+        else:
+            if use_claude and not claude_available():
+                st.warning("ANTHROPIC_API_KEY not found. Using local rule-based engine.")
+            analysis = analyze_note(note)
+            st.markdown(format_markdown_brief(analysis))
+
+with tab2:
+    st.subheader("Evaluate a draft against source notes")
+    st.write("Paste a source note and an AI-generated draft. The evaluator checks for unsupported claims, missing-information handling, and basic source alignment.")
+
+    eval_source = st.text_area("Source note", height=160, key="eval_source")
+    eval_draft = st.text_area("Draft output to evaluate", height=220, key="eval_draft")
+
+    if st.button("Evaluate draft"):
+        if not eval_source.strip() or not eval_draft.strip():
+            st.error("Please provide both a source note and a draft output.")
+        else:
+            report = evaluate_output_against_source(eval_source, eval_draft)
+            st.markdown(report)
+
+with tab3:
+    st.subheader("About this prototype")
+    st.markdown(
+        """
+        This is a working prototype for mission-driven organizations that need better ways to structure intake notes while keeping staff in control.
+
+        **Core design choice:** AI helps organize information, but humans review and decide.
+
+        **Best-fit use cases:**
+        - Workforce development intake
+        - Student support programs
+        - Civic service navigation
+        - Food, housing, or employment resource coordination
+        - Program follow-up summaries
+
+        **Not appropriate for:**
+        - Automated eligibility decisions
+        - Medical diagnosis
+        - Legal advice
+        - Crisis response without trained staff involvement
+        """
+    )
+
+MIT License
+
+Copyright (c) 2026 Kevin Tavan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of the Software, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+
+# MissionOps Intake Assistant
+
+A lightweight, runnable AI workflow prototype for mission-driven organizations. It helps intake or program teams turn messy client notes into structured summaries, need categories, urgency flags, suggested next steps, missing-information checks, and a human-review checklist.
+
+This repo is designed to show applied AI judgment, not just prompting. It includes a working Streamlit app, demo data, a rule-based fallback engine, optional Claude API support, and documentation for responsible handoff.
+
+## Why this exists
+
+Many nonprofits and public-interest teams work with unstructured notes from intake forms, calls, meetings, emails, and case updates. Important context can get buried, repeated, or missed. This prototype shows how AI-assisted workflows could help staff organize information faster while keeping humans in control.
+
+## What it does
+
+- Loads sample intake notes or a CSV upload
+- Produces a structured intake brief
+- Categorizes needs like housing, employment, food, transportation, education, health, and legal support
+- Flags urgency based on explicit risk indicators
+- Lists missing information to ask a human to confirm
+- Pulls supporting snippets from the original note
+- Generates a human review checklist
+- Includes an evaluation tab for reviewing AI outputs against source notes
+- Works without an API key using a deterministic rule-based engine
+- Optionally calls the Claude API if `ANTHROPIC_API_KEY` is set
+
+## What this does not do
+
+This tool does not make eligibility decisions, legal decisions, medical decisions, housing determinations, or benefit determinations. It is a staff-support workflow that prepares a reviewable draft.
+
+## Demo
+
+Run locally:
+
+```bash
+git clone https://github.com/YOUR-USERNAME/missionops-intake-assistant.git
+cd missionops-intake-assistant
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Optional Claude API mode:
+
+```bash
+export ANTHROPIC_API_KEY="your-api-key"
+streamlit run app.py
+```
+
+## CSV format
+
+Your uploaded CSV should include at least:
+
+```csv
+client_id,note
+```
+
+Optional columns:
+
+```csv
+date,staff_member,program
+```
+
+See `sample_data/intake_notes.csv`.
+
+## Repository structure
+
+```text
+.
+├── app.py
+├── requirements.txt
+├── sample_data/
+│   └── intake_notes.csv
+├── src/
+│   ├── triage_engine.py
+│   ├── claude_client.py
+│   └── evaluation.py
+├── docs/
+│   ├── problem-statement.md
+│   ├── responsible-ai-notes.md
+│   ├── handoff-guide.md
+│   └── evaluation-rubric.md
+└── tests/
+    └── test_triage_engine.py
+```
+
+## Why this is relevant to Claude Corps
+
+This project demonstrates:
+
+- Applied AI workflow design
+- Human-in-the-loop review
+- Clear documentation and handoff
+- Practical use for mission-driven organizations
+- Judgment about what AI should and should not automate
+- Ability to build something runnable and explainable
+
+## Responsible AI principles
+
+1. AI drafts, humans decide.
+2. Source notes remain visible.
+3. Missing information is labeled instead of guessed.
+4. Urgency flags require human escalation.
+5. Sensitive cases should be handled by trained staff.
+6. The workflow should be adapted to each organization’s policies.
+
+## Roadmap
+
+- Add role-based staff views
+- Add export to PDF or Google Docs
+- Add redaction for sensitive information
+- Add organization-specific resource directories
+- Add structured evaluation logs
+- Add deployment instructions for Streamlit Community Cloud
+
+streamlit>=1.36.0
+pandas>=2.0.0
+anthropic>=0.34.0
+pytest>=8.0.0
