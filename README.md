@@ -111,3 +111,17 @@ This project demonstrates:
 - Add organization-specific resource directories
 - Add structured evaluation logs
 - Add deployment instructions for Streamlit Community Cloud
+
+## Screenshots
+
+### Homepage
+![Homepage](assets/homepage.png)
+
+### Intake Brief Generator
+![Intake Brief Generator](assets/intake-brief.png)
+
+### Evaluation Report
+![Evaluation Report](assets/evaluation-report.png)
+
+### About Page
+![About Page](assets/about-page.png)
